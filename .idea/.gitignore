@@ -1,0 +1,8 @@
+# Default ignored files
+/shelf/
+/workspace.xml
+../json_books
+../rbf
+../books_errors.log
+../preprocessed
+../preprocessed_no_genre
