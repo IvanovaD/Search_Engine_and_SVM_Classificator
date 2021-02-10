@@ -16,7 +16,7 @@ import io
 from pathlib import Path
 import ntpath
 from joblib import dump, load
-import elasticsearch.helpers
+#import elasticsnearch.helpers
 from elasticsearch.helpers import streaming_bulk
 from nltk import word_tokenize
 from sklearn.feature_extraction.text import TfidfVectorizer
@@ -131,8 +131,7 @@ if __name__ == '__main__':
           logging.basicConfig(level=logging.ERROR)
 
 
-def \
-        _index(es_object, index_name='books'):
+def create_index(es_object, index_name='books'):
     created = False
     # index settings
     settings = {
@@ -185,8 +184,8 @@ def store_record(elastic_object, index_name, record):
 
 
 def search(es_object, index_name, search):
-    res = es_object.search(index=index_name, body=search)
-    print(res)
+    res = es_object.search(index=index_name, body=search)["hits"]["hits"]
+    print(json.dumps(res, indent=4, ensure_ascii=False))
 
 
 def generate_actions(letter):
@@ -324,6 +323,7 @@ def trainSVM():
 
     print("data merged")
     Tfidf_vect = TfidfVectorizer(lowercase=False, tokenizer=dummy, min_df=0.02, max_features=9000)
+
     Tfidf_vect.fit(X)
 
     print("data is fitted and dumped")
@@ -339,38 +339,96 @@ def trainSVM():
     predictions_SVM = SVM.predict(Test_X_Tfidf)
     print("SVM Accuracy Score -> ", accuracy_score(predictions_SVM, Test_Y) * 100)
 
-    dump(Encoder, 'svm/Encoder' + str(preprocessedDocumentsCount)+'.joblib')
-    dump(Tfidf_vect, 'svm/vectorizer'  + str(preprocessedDocumentsCount)+'.joblib')
+    user_input = input("Please select a folder:")
+    folder = user_input
+    if not os.path.exists(folder):
+        os.makedirs(folder)
+    dump(Encoder, folder + '/Encoder.joblib')
+    dump(Tfidf_vect,  folder +'/vectorizer.joblib')
     print("tfifd_vect dumped")
 
-    dump(SVM, 'svm/trainedOn' + str(preprocessedDocumentsCount)+'.joblib')
-    dump(Test_Y, 'svm/test_data' + str(preprocessedDocumentsCount)+'.joblib')
-    dump(predictions_SVM, 'svm/prediction' + str(preprocessedDocumentsCount)+'.joblib')
+    dump(SVM,  folder +'/svm.joblib')
+    dump(Test_Y,  folder +'/test_data.joblib')
+    dump(predictions_SVM,  folder +'/prediction.joblib')
     print("predictions_SVM dumped")
 
 
-def demonstrate(book):
-    docsCount=1921
+def demonstrate(folder, book):
     book = "preprocessed_no_genre/" + book
-    svm=load('svm/trainedOn4k_examples_9k_features' + str(docsCount)+'.joblib')
+    svm=load(folder + '/svm.joblib')
     with open(book, encoding='utf-8-sig') as json_file:
         data = json.load(json_file)
 
-    encodedCategories=load('svm/Encoder' + str(docsCount)+'.joblib')
+    encodedCategories=load(folder + '/Encoder.joblib')
     values = encodedCategories.classes_
     keys = encodedCategories.transform(encodedCategories.classes_)
     dictionary = dict(zip(keys, values))
 
-    Tfidf_vect = load('svm/vectorizer' + str(docsCount)+'.joblib')
+    Tfidf_vect = load(folder+'/vectorizer.joblib')
     Test_X_Tfidf = Tfidf_vect.transform([data["tokenized_text"]])
 
     prediction = svm.predict(Test_X_Tfidf)[0]
     print(data["author"] + " - " + data["title"] + " : " + dictionary[prediction])
 
 
-def main():
-    # es = connect_elasticsearch()
-    # trainSVM()
+def index_documents():
+    es = connect_elasticsearch()
+    number_of_docs=37785
+    print("Indexing documents...")
+    progress = tqdm.tqdm(unit="docs", total=number_of_docs)
+    successes = 0
+    letters = ['Z', 'L', 'N', 'A', 'Б','В','Г','Д','Е','Ж','З','И','Й','К','Л','М','О','П', 'Р','С','Т','У','Ф','Х','Ц','Ч','Ш','Щ','Ъ','Ю','Я']
+    for letter in letters:
+        for ok, action in streaming_bulk(
+            client=es, index="books", actions=generate_actions(letter), request_timeout=60
+        ):
+            progress.update(1)
+            successes += ok
+    print("Indexed %d/%d documents" % (successes, number_of_docs))
+
+
+def make_query():
+    es = connect_elasticsearch()
+    user_input = input("Please choose query type: 1:")
+    fuzziness=False
+
+    if es is not None:
+        if fuzziness == True:
+            search_object = {'query': {
+                                'match': {
+                                    'content': {
+                                        "query": user_input, "fuzziness":"AUTO"
+                                               }
+                                         }
+                                      },
+                                    "fields": ["author", "title"],
+                                        "_source": False}
+        else:
+            search_object = {'query':
+                {
+                'match': {
+                    'content': user_input
+                        }
+                },
+                "fields": ["author", "title"],
+                "_source": False
+                                }
+
+        # search_object = {'query':
+        #                      {'query_string':
+        #                           {'query': '(транквилизатори) OR (транквилизаториafaf)'}}}
+        search(es, 'books', json.dumps(search_object))
+
+
+def classifier_test(folder):
+    #trainSVM()
+    predictions_SVM=load(folder + '/prediction' +'.joblib')
+    test_data=load(folder+'/test_data' +'.joblib')
+    svm = load(folder + '/svm' + '.joblib')
+    #print(svm.get_params(True))
+    #print(len(predictions_SVM))
+    print("SVM Accuracy Score -> ", accuracy_score(predictions_SVM, test_data) * 100)
+
     book1="Агата Кристи - Дамата с воала(preprocessed).txt"
     book2="Алеко Константинов - Разни хора, разни идеали I(preprocessed).txt"
     book3="Марк Твен - Писма от Земята(preprocessed).txt"
@@ -378,7 +436,7 @@ def main():
     book5="Тери Пратчет - Автентичната котка(preprocessed).txt"
     book6="Стивън Кинг - Сънят на Харви(preprocessed).txt"
     book7="Ърнест Хемингуей - Зелените хълмове на Африка(preprocessed).txt"
-    book8 = "Антоан дьо Сент-Екзюпери - Цитадела(preprocessed).txt"
+    book8="Антоан дьо Сент-Екзюпери - Цитадела(preprocessed).txt"
     book9="Джеръм К. Джеръм - Какво струва да се покажеш любезен(preprocessed).txt"
     book10="Стивън Кинг - Дяволската котка(preprocessed).txt"
     book11="Емили Гифин - Нещо назаем(preprocessed).txt"
@@ -387,58 +445,13 @@ def main():
     books = [book1, book2, book3, book4, book5, book6, book7, book8, book9, book10, book11, book12, book13]
 
     for book in books:
-        demonstrate(book)
+        demonstrate(folder, book)
 
-#file = io.open("./IDS.txt", mode="r", encoding="utf-8-sig")
-    #for line in file:
-
-    # body = {'query': {'terms': {'_id': ['z8OI43YBH4VPkmMf0Az_']}}}
-    #
-    # genre = es.search(body, index='books', _source=("genre"))
-    # print(genre["hits"]["hits"][0]["_source"]["genre"].split(',')[0])
-    # res=es.termvectors('books', id="z8OI43YBH4VPkmMf0Az_", offsets=False, payloads=False, positions=False,
-    #                    term_statistics=True, field_statistics=True, fields=("content"))
-    #
-
-    #print(json.dumps(res, indent=2, sort_keys=True))
-
-    #for key, value in res.items():
-       #tf = key[term_freq] / allTermsSum
-       #TF(t) = (Number of times term t appears in a document) / (Total number of terms in the document).
-       #log_e(Total number of documents / Number of documents with term t in it).
-       #idf = log_e(doc_count / key[doc_freq])
-
-        #preprocessDocuments(es)
-
-    # file = io.open(".\Агоп Мелконян - Via Dolorosa.txt", mode="r", encoding="utf-8-sig")
-    # record = file.read()
-    # print(record)
-    # store_record(es, "books", record)
-    # print("Indexing documents...")
-    # progress = tqdm.tqdm(unit="docs", total=number_of_docs)
-    # successes = 0
-    # letters = ['Z', 'L', 'N', 'A', 'Б','В','Г','Д','Е','Ж','З','И','Й','К','Л','М','О','П', 'Р','С','Т','У','Ф','Х','Ц','Ч','Ш','Щ','Ъ','Ю','Я']
-    # for letter in letters:
-    #     for ok, action in streaming_bulk(
-    #         client=es, index="books", actions=generate_actions(letter), request_timeout=60
-    #     ):
-    #         progress.update(1)
-    #         successes += ok
-    # print("Indexed %d/%d documents" % (successes, number_of_docs))
-
-    # if es is not None:
-    #     # search_object = {'query': {'match': {'title': 'Via Dolorosa'}}}
-    #     # search(es, 'books', json.dumps(search_object))
-    #     search_object = {'query':
-    #                          {'query_string':
-    #                               {'query': '(транквилизатори) OR (транквилизаториafaf)'}}}
-    #     search(es, 'books', json.dumps(search_object))
-
-    # file = io.open(".\Агоп Мелконян - Via Dolorosa.txt", mode="r", encoding="utf-8-sig")
-    # record = file.read()
-    # print(record)
-    # store_record(es, "books", record)
-
+def main():
+    folder="experiments/"
+    folder =folder + "svm(c1)"
+    classifier_test(folder)
+    #make_query()
 
 
 if __name__ == '__main__':
