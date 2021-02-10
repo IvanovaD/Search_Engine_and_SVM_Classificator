@@ -354,7 +354,8 @@ def trainSVM():
 
 
 def demonstrate(folder, book):
-    book = "preprocessed_no_genre/" + book
+   #book = "preprocessed_no_genre/" + book
+    book = "test/" + book
     svm=load(folder + '/svm.joblib')
     with open(book, encoding='utf-8-sig') as json_file:
         data = json.load(json_file)
