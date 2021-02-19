@@ -121,9 +121,9 @@ def connect_elasticsearch():
     _es = None
     _es = Elasticsearch([{'host': 'localhost', 'port': 9200}])
     if _es.ping():
-        print('Yay Connect')
+        print('Connected')
     else:
-        print('Awww it could not connect!')
+        print('Cannot connect')
     return _es
 
 
@@ -390,8 +390,8 @@ def index_documents():
 
 def make_query():
     es = connect_elasticsearch()
-    user_input = input("Please choose query type: 1:")
-    fuzziness=False
+    user_input = input("Search: ")
+    fuzziness=True
 
     if es is not None:
         if fuzziness == True:
@@ -415,9 +415,6 @@ def make_query():
                 "_source": False
                                 }
 
-        # search_object = {'query':
-        #                      {'query_string':
-        #                           {'query': '(транквилизатори) OR (транквилизаториafaf)'}}}
         search(es, 'books', json.dumps(search_object))
 
 
@@ -451,8 +448,10 @@ def classifier_test(folder):
 def main():
     folder="experiments/"
     folder =folder + "svm(c1)"
-    classifier_test(folder)
-    #make_query()
+    #folder = folder + "2kexamples"
+
+    #classifier_test(folder)
+    make_query()
 
 
 if __name__ == '__main__':
